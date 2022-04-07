@@ -204,4 +204,18 @@ reg [3:0] interation;
 
     rotator U (clk_i, reset_i, init, interation, tanangle_of_iteration, x, y, z, x_o, y_o, z_o);
 
+`ifndef VERILATOR
+initial begin
+    integer idx;
+    $dumpfile("dump.vcd");
+    $dumpvars(1, cordic);
+    $dumpvars(1, x_i);
+    $dumpvars(1, y_i);
+    $dumpvars(1, z_i);
+    $dumpvars(1, x_o);
+    $dumpvars(1, y_o);
+    $dumpvars(1, z_o);
+end
+`endif
+
 endmodule
