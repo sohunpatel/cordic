@@ -13,7 +13,7 @@ from cocotb.queue import Queue
 from cocotb.triggers import RisingEdge
 
 
-NUM_SAMPLES = int(os.environ.get("NUM_SAMPLES", 3000))
+NUM_SAMPLES = int(os.environ.get("NUM_SAMPLES", 100))
 
 
 class DataValidMonitor:
@@ -127,9 +127,9 @@ class CordicTester:
                 z=expected_inputs["z"]
             )
 
-            print("Inputs: z: {1}", expected_inputs["z"])
-            print("Expected: x: {1} y: {2}", expected["x"], expected["y"])
-            print("Actual: x: {1} y: {2}", actual["x"], actual["y"])
+            self.dut._log.info("Inputs: z: {1}", expected_inputs["z"])
+            self.dut._log.info("Expected: x: {1} y: {2}", expected["x"], expected["y"])
+            self.dut._log.info("Actual: x: {1} y: {2}", actual["x"], actual["y"])
 
             assert actual["x"] == expected["x"]
             assert actual["y"] == expected["y"]
