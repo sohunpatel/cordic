@@ -268,3 +268,6 @@ examples/*/tests/compile
 # Tachyon DA CVC
 tests/test_cases/*/verilog.log
 examples/*/tests/verilog.log
+
+*.xml
+*.vcd
