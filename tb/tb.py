@@ -12,8 +12,13 @@ from cocotb.handle import SimHandleBase
 from cocotb.queue import Queue
 from cocotb.triggers import RisingEdge
 
+from math import pi
 
-NUM_SAMPLES = int(os.environ.get("NUM_SAMPLES", 100))
+from fixedpoint import FixedPoint
+from numpy import sign
+
+
+NUM_SAMPLES = int(os.environ.get("NUM_SAMPLES", 10))
 
 
 class DataValidMonitor:
@@ -79,7 +84,8 @@ class CordicTester:
             clk=self.dut.clk_i,
             valid=self.dut.valid_i,
             datas=dict(
-                init=self.dut.init,
+                mode=self.dut.mode,
+                rotational=self.dut.rotational,
                 x=self.dut.x_i,
                 y=self.dut.y_i,
                 z=self.dut.z_i,
@@ -115,9 +121,9 @@ class CordicTester:
         self._checker.kill()
         self._checker = None
 
-    def model(self, z: float) -> Dict[float, float]:
+    def model(self, z: float) -> Dict[FixedPoint, FixedPoint]:
         """Transaction-level model of the matrix multiplier as instantiated"""
-        return dict(x=math.cos(z), y=math.sin(z))
+        return dict(x=FixedPoint(math.cos(z), m=16, n=16, signed=True), y=FixedPoint(math.sin(z), m=16, n=16, signed=True))
 
     async def _check(self) -> None:
         while True:
@@ -127,12 +133,8 @@ class CordicTester:
                 z=expected_inputs["z"]
             )
 
-            self.dut._log.info("Inputs: z: {1}", expected_inputs["z"])
-            self.dut._log.info("Expected: x: {1} y: {2}", expected["x"], expected["y"])
-            self.dut._log.info("Actual: x: {1} y: {2}", actual["x"], actual["y"])
-
-            assert actual["x"] == expected["x"]
-            assert actual["y"] == expected["y"]
+            assert actual["x"] == expected["x"].bits
+            assert actual["y"] == expected["y"].bits
 
 
 @cocotb.test(
@@ -148,40 +150,45 @@ async def test_cordic(dut: SimHandleBase):
 
     # Initial valies
     dut.valid_i.value = 0
-    dut.init.value = 0
+    dut.valid_i.value = 0
+    dut.mode.value = 0
+    dut.rotational.value = 1
     dut.x_i.value = 0
     dut.y_i.value = 0
     dut.z_i.value = 0
 
     # Reset DUT
-    dut.reset_i.value = 1
+    dut.rstn_i.value = 0
     for _ in range(3):
         await RisingEdge(dut.clk_i)
-    dut.reset_i.value = 0
+    dut.rstn_i.value = 1
 
     # start tester after reset so we know it's in a good state
     tester.start()
 
     dut._log.info("Test cordic operations")
 
+    thetas = [pi / 6, pi / 4, pi / 3, pi / 2]
+
     # Do cordic solutions
-    for i, (x, y, z) in enumerate(zip(gen(), gen(), gen())):
+    for i, z in enumerate(thetas):
         await RisingEdge(dut.clk_i)
-        dut.x_i.value = x
-        dut.y_i.value = y
-        dut.z_i.value = z
+        dut.x_i.value = FixedPoint(0.6073, m=16, n=16, signed=True).bits
+        dut.y_i.value = 0
+        dut.z_i.value = FixedPoint(z, m=16, n=16, signed=True).bits
         dut.valid_i.value = 1
 
         await RisingEdge(dut.clk_i)
         dut.valid_i.value = 0
 
-        if i % 100 == 0:
-            dut._log.info(f"{i} / {NUM_SAMPLES}")
+        await RisingEdge(dut.valid_o)
+
+        dut._log.info(f"{i+1} / {4}")
     await RisingEdge(dut.clk_i)
 
 
 def create(func):
-    return func(17)
+    return func(32)
 
 
 def gen(num_samples=NUM_SAMPLES, func=getrandbits):

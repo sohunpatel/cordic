@@ -209,12 +209,6 @@ initial begin
     integer idx;
     $dumpfile("dump.vcd");
     $dumpvars(1, cordic);
-    $dumpvars(1, x_i);
-    $dumpvars(1, y_i);
-    $dumpvars(1, z_i);
-    $dumpvars(1, x_o);
-    $dumpvars(1, y_o);
-    $dumpvars(1, z_o);
 end
 `endif
 

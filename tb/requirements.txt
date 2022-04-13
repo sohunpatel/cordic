@@ -1,2 +1,5 @@
 cocotb==1.6.2
 pytest==7.1.1
+fpbinary==1.5.3
+numfi
+fixedpoint==1.0.1
