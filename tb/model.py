@@ -2,14 +2,14 @@ from math import atan, pow, atanh, pi, cos, sin
 
 from fixedpoint import FixedPoint
 
-NUM_ITER = 64
-K = FixedPoint(0.5, m=16, n=16, signed=True)
+NUM_ITER = 32
+K = FixedPoint(0.5, m=15, n=16, signed=True)
 
 def cir_LUT(i) -> FixedPoint:
-    return FixedPoint(atan(pow(2, -i)), m=16, n=16, signed=True)
+    return FixedPoint(atan(pow(2, -i)), m=14, n=16, signed=True)
 
 def lin_LUT(i) -> FixedPoint:
-    return FixedPoint(pow(2, -i))
+    return FixedPoint(pow(2, -i), m=14, n=16, signed=True)
 
 def hyp_LUT(i) -> FixedPoint:
     return FixedPoint(atanh(pow(2, -i)))
@@ -20,8 +20,8 @@ def cordic(x:FixedPoint, y: FixedPoint, z: FixedPoint, mode: str, mu: int):
     Y = [y] * NUM_ITER
     Z = [z] * NUM_ITER
     for i in range(NUM_ITER):
-        if i == 0:
-            continue
+        # if i == 0:
+        #     continue
         if (mode == "rotation"):
             if (z > 0):
                 d = 1
@@ -44,12 +44,14 @@ def cordic(x:FixedPoint, y: FixedPoint, z: FixedPoint, mode: str, mu: int):
         X[i] = x
         Y[i] = y
         Z[i] = z
-    return (X, Y, Z)
+    return (X[NUM_ITER-1], Y[NUM_ITER-1], Z[NUM_ITER-1])
 
 if __name__ == "__main__":
     angle = FixedPoint(pi/3, m=16, n=16, signed=True)
-    sol = cordic(x=K, y=0, z=K, mode="rotation", mu=0)
-    for i, (x, y, z) in enumerate(zip(sol[0], sol[1], sol[2])):
-        print(f"x: {float(x)} y: {float(y)} z: {float(z)}")
-    # print(f"Results:   X: {sol[0]} Y: {sol[1]} Z: {sol[2]}")
+    x = FixedPoint(0.5, m=14, n=16, signed=True)
+    y = FixedPoint(0, m=14, n=16, signed=True)
+    z = FixedPoint(0.5, m=14, n=16, signed=True)
+    sol = cordic(x=x, y=y, z=z, mode="rotation", mu=0)
+    print(f"Results:   X: {hex(sol[0])} Y: {hex(sol[1])} Z: {hex(sol[2])}")
+    print(f"Results:   X: {float(sol[0])} Y: {float(sol[1])} Z: {float(sol[2])}")
     # print("Expected:  X: {} Y: {} Z: {}".format(cos(angle), sin(angle), 0))

@@ -13,17 +13,49 @@ reg signed [31:0] out;
 always @(*) begin
     if (mode == CIRCULAR) begin
         case (i)
-            0 : out <= 0;
-            default: out <= 0;
+            4'd00: out = 32'hc910;
+            4'd01: out = 32'h76b2;
+            4'd02: out = 32'h3eb7;
+            4'd03: out = 32'h1fd6;
+            4'd04: out = 32'h0ffb;
+            4'd05: out = 32'h07ff;
+            4'd06: out = 32'h0400;
+            4'd07: out = 32'h0200;
+            4'd08: out = 32'h0100;
+            4'd09: out = 32'h0080;
+            4'd10: out = 32'h0040;
+            4'd11: out = 32'h0020;
+            4'd12: out = 32'h0010;
+            4'd13: out = 32'h0008;
+            4'd14: out = 32'h0004;
+            4'd15: out = 32'h0002;
+            default: out = 32'h0;
         endcase
     end else if (mode == LINEAR) begin
-        out <= 1 <<< (16 - i);
+        out = 1 <<< (16 - i);
     end else if (mode == HYPERBOLIC) begin
         case (i)
-            0 : out <= 0;
-            default: out <= 0;
+            4'd00: out = 32'h8c9f;
+            4'd01: out = 32'h4163;
+            4'd02: out = 32'h202b;
+            4'd03: out = 32'h1005;
+            4'd04: out = 32'h0801;
+            4'd05: out = 32'h0400;
+            4'd06: out = 32'h0200;
+            4'd07: out = 32'h0100;
+            4'd08: out = 32'h0080;
+            4'd09: out = 32'h0040;
+            4'd10: out = 32'h0020;
+            4'd11: out = 32'h0010;
+            4'd12: out = 32'h0008;
+            4'd13: out = 32'h0004;
+            4'd14: out = 32'h0002;
+            4'd15: out = 32'h0001;
+            default: out = 0;
         endcase
-    end
+    end else begin
+        out = 32'h0000;
+     end
 end
 
 assign e = out;
@@ -96,12 +128,16 @@ always @(posedge clk_i) begin
         state <= CALC;
     end else if (state == CALC && i == 4'b1111) begin
         state <= WRITE;
+    end else if (state == WRITE) begin
+        state <= IDLE;
     end
 end
 
 always @(posedge clk_i) begin
     case (state)
-    IDLE: ;
+    IDLE: begin
+        valid <= 1'b0; 
+    end
     READ: begin
         x <= x_i;
         y <= y_i;
@@ -116,7 +152,7 @@ always @(posedge clk_i) begin
         end else if (mode == HYPERBOLIC) begin
             x <= (d) ? (x + (y >>> i)) : (x - (y >>> i));
         end
-        y <= (d) ? (y + (x >>> 1)) : (y - (x >>> 1));
+        y <= (d) ? (y + (x >>> i)) : (y - (x >>> i));
         z <= (d) ? (z - e) : (z + e);
         i <= i + 1;
     end
