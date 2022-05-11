@@ -5,6 +5,8 @@ from random import getrandbits
 from re import I
 from typing import Any, Dict
 
+import matplotlib.pyplot as plt
+
 import cocotb
 from cocotb.binary import BinaryValue
 from cocotb.clock import Clock
@@ -17,7 +19,7 @@ from math import pi, cos, sin, atan, cosh, sinh, atanh, sqrt
 from fixedpoint import FixedPoint
 
 
-NUM_SAMPLES = int(os.environ.get("NUM_SAMPLES", 10))
+NUM_SAMPLES = int(os.environ.get("NUM_SAMPLES", 100))
 
 
 def intToFloat(x: int) -> float:
@@ -93,6 +95,7 @@ class CordicTester:
         self.dut = cordic_entity
         self.ERRORS = 0
         self.PASSED = 0
+        self.status = False
 
         self.input_mon = DataValidMonitor(
             clk=self.dut.clk_i,
@@ -188,24 +191,25 @@ class CordicTester:
 
             try:
                 if (_x < x_ - 0.1 or _x > x_ + 0.1):
-                    status = False
+                    self.status = False
                 elif (_y < y_ - 0.1 or _y > y_ + 0.1):
-                    status = False
+                    self.status = False
                 elif (_z < z_ - 0.1 or _z > z_ + 0.1):
                     if (_z > 1000):
-                        status = True
+                        self.status = True
                         self.PASSED += 1
                     else:
-                        status = False
+                        self.status = False
                 else:
-                    status = True
+                    self.status = True
                     self.PASSED += 1
+
                     if DEBUG:
                         cocotb.log.info("PASS")
                         cocotb.log.info(f"(Inputs): x: {x} y: {y} z: {z}")
                         cocotb.log.info(f"(Expect): x: {x_} y: {y_} z: {z_}")
                         cocotb.log.info(f"(Actual): x: {_x} y: {_y} z: {_z}")
-                assert status
+                assert self.status
             except AssertionError:
                 self.ERRORS += 1
                 if DEBUG:
@@ -263,6 +267,7 @@ async def test_multiplication(dut: SimHandleBase):
     await RisingEdge(dut.clk_i)
 
     dut._log.info(f"Passed: {tester.PASSED} Errors: {tester.ERRORS}")
+    dut._log.info(x)
 
     assert tester.ERRORS == 0
 
@@ -352,7 +357,7 @@ async def test_cosh_sinh(dut: SimHandleBase):
     dut._log.info("Test hyperbolic cosine and sine operations")
 
     # Do cordic solutions
-    for i, z in enumerate(gen(mu=2)):
+    for i, z in enumerate(gen(mu=-1)):
         await RisingEdge(dut.clk_i)
         dut.x_i.value = FixedPoint(1.2075, m=14, n=16, signed=True).bits
         dut.y_i.value = FixedPoint(0, m=14, n=16, signed=True).bits
