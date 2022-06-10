@@ -19,17 +19,32 @@ from math import pi, cos, sin, atan, cosh, sinh, atanh, sqrt
 from fixedpoint import FixedPoint
 
 
-NUM_SAMPLES = int(os.environ.get("NUM_SAMPLES", 100))
+NUM_SAMPLES = int(os.environ.get("NUM_SAMPLES", 10))
 
 
 def intToFloat(x: int) -> float:
     binary = bin(x)
+    neg = False
+    if binary[2] == '1' and binary.__len__() == 32:
+        neg = True
+        binary = bin(-x)
     f = 0
     i = 0
-    for b in reversed(binary):
+    msb = False
+    passedB = False
+    for b in binary:
         if (b == '1'):
-            f = f + 2**(i-16)
-        i = i + 1
+            f = f + 2**(binary.__len__()-i-16-1)
+        if (b == 'b'):
+            passedB = True
+            continue
+        if (msb == True):
+            if b == '1':
+                neg = True
+        if passedB:
+            i = i + 1
+    if neg:
+        f = -f
     return f
 
 
@@ -138,7 +153,7 @@ class CordicTester:
         self._checker.kill()
         self._checker = None
 
-    def model(self, inputs: Queue[DataValidMonitor], DEBUG=False):
+    def model(self, inputs: Queue[DataValidMonitor]):
         """Transaction-level model of the matrix multiplier as instantiated"""
         x = intToFloat(inputs["x"])
         y = intToFloat(inputs["y"])
@@ -173,7 +188,7 @@ class CordicTester:
             z = atanh(y/x)
         return dict(x=x, y=y, z=z)
 
-    async def _check(self) -> None:
+    async def _check(self, DEBUG=False) -> None:
         while True:
             actual = await self.output_mon.values.get()
             expected_inputs = await self.input_mon.values.get()
@@ -249,6 +264,10 @@ async def test_multiplication(dut: SimHandleBase):
 
     dut._log.info("Test linear multiplication operations")
 
+    X = []
+    Y = []
+    Z = []
+
     # Do cordic solutions
     for i, (x, z) in enumerate(zip(gen(mu=0), gen(mu=0))):
         await RisingEdge(dut.clk_i)
@@ -264,10 +283,21 @@ async def test_multiplication(dut: SimHandleBase):
 
         if ((i+1) % (NUM_SAMPLES/10) == 0):
             dut._log.info(f"{i+1} / {NUM_SAMPLES}")
+
+        if tester.status == False:
+            X.append(intToFloat(x))
+            Z.append(intToFloat(z))
     await RisingEdge(dut.clk_i)
 
     dut._log.info(f"Passed: {tester.PASSED} Errors: {tester.ERRORS}")
     dut._log.info(x)
+
+    # plt.figure()
+    # plt.subplot(211)
+    # plt.plot(X)
+    # plt.subplot(212)
+    # plt.plot(Z)
+    # plt.show()
 
     assert tester.ERRORS == 0
 
