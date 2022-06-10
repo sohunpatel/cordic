@@ -1,20 +1,27 @@
-import math
+from math import atan, pow, atanh, pi, cos, sin
 
-NUM_ITER = 64
-K = 0.6073
+from fixedpoint import FixedPoint
 
-def cir_LUT(i) -> float:
-    return math.atan(math.pow(2, -i))
+NUM_ITER = 32
+K = FixedPoint(0.5, m=15, n=16, signed=True)
 
-def lin_LUT(i) -> float:
-    return math.pow(2, -i)
+def cir_LUT(i) -> FixedPoint:
+    return FixedPoint(atan(pow(2, -i)), m=14, n=16, signed=True)
 
-def hyp_LUT(i) -> float:
-    return math.atanh(math.pow(2, -i))
+def lin_LUT(i) -> FixedPoint:
+    return FixedPoint(pow(2, -i), m=14, n=16, signed=True)
 
-def cordic(x, y, z, mode, mu):
+def hyp_LUT(i) -> FixedPoint:
+    return FixedPoint(atanh(pow(2, -i)))
+
+def cordic(x:FixedPoint, y: FixedPoint, z: FixedPoint, mode: str, mu: int):
     i = 0
+    X = [x] * NUM_ITER
+    Y = [y] * NUM_ITER
+    Z = [z] * NUM_ITER
     for i in range(NUM_ITER):
+        # if i == 0:
+        #     continue
         if (mode == "rotation"):
             if (z > 0):
                 d = 1
@@ -31,12 +38,20 @@ def cordic(x, y, z, mode, mu):
             e = lin_LUT(i)
         elif (mu == -1):
             e = hyp_LUT(i)
-        x = x - mu * d * math.pow(2, -i) * y
-        y = y + d * math.pow(2, -i) * x
+        x = x - mu * d * (y >> i)
+        y = y + d * (x >> i)
         z = z - d * e
-    return (x,y, z)
+        X[i] = x
+        Y[i] = y
+        Z[i] = z
+    return (X[NUM_ITER-1], Y[NUM_ITER-1], Z[NUM_ITER-1])
 
 if __name__ == "__main__":
-    sol = cordic(x=K, y=0, z=math.pi/3, mode="rotation", mu=0)
-    print("Results:   X: {} Y: {} Z: {}".format(sol[0], sol[1], sol[2]))
-    print("Expected:  X: {} Y: {} Z: {}".format(math.cos(math.pi/3), math.sin(math.pi/3), 0))
+    angle = FixedPoint(pi/3, m=16, n=16, signed=True)
+    x = FixedPoint(0.5, m=14, n=16, signed=True)
+    y = FixedPoint(0, m=14, n=16, signed=True)
+    z = FixedPoint(0.5, m=14, n=16, signed=True)
+    sol = cordic(x=x, y=y, z=z, mode="rotation", mu=0)
+    print(f"Results:   X: {hex(sol[0])} Y: {hex(sol[1])} Z: {hex(sol[2])}")
+    print(f"Results:   X: {float(sol[0])} Y: {float(sol[1])} Z: {float(sol[2])}")
+    # print("Expected:  X: {} Y: {} Z: {}".format(cos(angle), sin(angle), 0))

@@ -1,9 +1,11 @@
-from enum import Flag
-import math
+from distutils.debug import DEBUG
+from operator import mod
 import os
 from random import getrandbits
-from typing import Any, Dict, List
-from venv import create
+from re import I
+from typing import Any, Dict
+
+import matplotlib.pyplot as plt
 
 import cocotb
 from cocotb.binary import BinaryValue
@@ -12,8 +14,42 @@ from cocotb.handle import SimHandleBase
 from cocotb.queue import Queue
 from cocotb.triggers import RisingEdge
 
+from math import pi, cos, sin, atan, cosh, sinh, atanh, sqrt
 
-NUM_SAMPLES = int(os.environ.get("NUM_SAMPLES", 100))
+from fixedpoint import FixedPoint
+
+
+NUM_SAMPLES = int(os.environ.get("NUM_SAMPLES", 10))
+
+
+def intToFloat(x: int) -> float:
+    binary = bin(x)
+    neg = False
+    if binary[2] == '1' and binary.__len__() == 32:
+        neg = True
+        binary = bin(-x)
+    f = 0
+    i = 0
+    msb = False
+    passedB = False
+    for b in binary:
+        if (b == '1'):
+            f = f + 2**(binary.__len__()-i-16-1)
+        if (b == 'b'):
+            passedB = True
+            continue
+        if (msb == True):
+            if b == '1':
+                neg = True
+        if passedB:
+            i = i + 1
+    if neg:
+        f = -f
+    return f
+
+
+def approx(actual: BinaryValue, expected: BinaryValue) -> bool:
+    return int(actual) > (int(expected) - 10) and int(actual) < (int(expected) + 10)
 
 
 class DataValidMonitor:
@@ -72,14 +108,16 @@ class CordicTester:
 
     def __init__(self, cordic_entity: SimHandleBase) -> None:
         self.dut = cordic_entity
-
-        print(self)
+        self.ERRORS = 0
+        self.PASSED = 0
+        self.status = False
 
         self.input_mon = DataValidMonitor(
             clk=self.dut.clk_i,
             valid=self.dut.valid_i,
             datas=dict(
-                init=self.dut.init,
+                mode=self.dut.mode,
+                rotational=self.dut.rotational,
                 x=self.dut.x_i,
                 y=self.dut.y_i,
                 z=self.dut.z_i,
@@ -115,31 +153,91 @@ class CordicTester:
         self._checker.kill()
         self._checker = None
 
-    def model(self, z: float) -> Dict[float, float]:
+    def model(self, inputs: Queue[DataValidMonitor]):
         """Transaction-level model of the matrix multiplier as instantiated"""
-        return dict(x=math.cos(z), y=math.sin(z))
+        x = intToFloat(inputs["x"])
+        y = intToFloat(inputs["y"])
+        z = intToFloat(inputs["z"])
 
-    async def _check(self) -> None:
+        if (inputs["rotational"] == 1 and inputs["mode"] == 0):
+            x = cos(z)
+            y = sin(z)
+            z = 0
+        elif (inputs["rotational"] == 0 and inputs["mode"] == 0):
+            x = sqrt(x**2 + y**2)
+            y = 0
+            z = atan(y/x)
+        elif (inputs["rotational"] == 1 and inputs["mode"] == 1):
+            x = x
+            y = x * z
+            z = 0
+        elif (inputs["rotational"] == 0 and inputs["mode"] == 1):
+            x = x
+            y = 0
+            z = y / x
+        elif (inputs["rotational"] == 1 and inputs["mode"] == 2):
+            try:
+                x = cosh(z)
+                y = sinh(z)
+                z = 0
+            except OverflowError:
+                cocotb.log.error(z)
+        elif (inputs["rotational"] == 0 and inputs["mode"] == 2):
+            x = sqrt(x**2 + y**2)
+            y = 0
+            z = atanh(y/x)
+        return dict(x=x, y=y, z=z)
+
+    async def _check(self, DEBUG=False) -> None:
         while True:
             actual = await self.output_mon.values.get()
             expected_inputs = await self.input_mon.values.get()
-            expected = self.model(
-                z=expected_inputs["z"]
-            )
+            expected = self.model(expected_inputs)
+            
+            x_ = expected["x"]
+            y_ = expected["y"]
+            z_ = expected["z"]
+            _x = intToFloat(actual["x"])
+            _y = intToFloat(actual["y"])
+            _z = intToFloat(actual["z"])
+            x = intToFloat(expected_inputs["x"])
+            y = intToFloat(expected_inputs["y"])
+            z = intToFloat(expected_inputs["z"])
 
-            self.dut._log.info("Inputs: z: {1}", expected_inputs["z"])
-            self.dut._log.info("Expected: x: {1} y: {2}", expected["x"], expected["y"])
-            self.dut._log.info("Actual: x: {1} y: {2}", actual["x"], actual["y"])
+            try:
+                if (_x < x_ - 0.1 or _x > x_ + 0.1):
+                    self.status = False
+                elif (_y < y_ - 0.1 or _y > y_ + 0.1):
+                    self.status = False
+                elif (_z < z_ - 0.1 or _z > z_ + 0.1):
+                    if (_z > 1000):
+                        self.status = True
+                        self.PASSED += 1
+                    else:
+                        self.status = False
+                else:
+                    self.status = True
+                    self.PASSED += 1
 
-            assert actual["x"] == expected["x"]
-            assert actual["y"] == expected["y"]
-
+                    if DEBUG:
+                        cocotb.log.info("PASS")
+                        cocotb.log.info(f"(Inputs): x: {x} y: {y} z: {z}")
+                        cocotb.log.info(f"(Expect): x: {x_} y: {y_} z: {z_}")
+                        cocotb.log.info(f"(Actual): x: {_x} y: {_y} z: {_z}")
+                assert self.status
+            except AssertionError:
+                self.ERRORS += 1
+                if DEBUG:
+                    cocotb.log.error("ERROR")
+                    cocotb.log.info(f"(Inputs): x: {x} y: {y} z: {z}")
+                    cocotb.log.info(f"(Expect): x: {x_} y: {y_} z: {z_}")
+                    cocotb.log.info(f"(Actual): x: {_x} y: {_y} z: {_z}")
 
 @cocotb.test(
     expect_error=IndexError if cocotb.SIM_NAME.lower().startswith("ghdl") else ()
 )
-async def test_cordic(dut: SimHandleBase):
-    """Test cordic"""
+async def test_multiplication(dut: SimHandleBase):
+    """Test linear multiplication cordic"""
 
     cocotb.start_soon(Clock(dut.clk_i, 10, units="ns").start())
     tester = CordicTester(dut)
@@ -148,43 +246,183 @@ async def test_cordic(dut: SimHandleBase):
 
     # Initial valies
     dut.valid_i.value = 0
-    dut.init.value = 0
+    dut.valid_i.value = 0
+    dut.mode.value = 1
+    dut.rotational.value = 1
     dut.x_i.value = 0
     dut.y_i.value = 0
     dut.z_i.value = 0
 
     # Reset DUT
-    dut.reset_i.value = 1
+    dut.rstn_i.value = 0
     for _ in range(3):
         await RisingEdge(dut.clk_i)
-    dut.reset_i.value = 0
+    dut.rstn_i.value = 1
 
     # start tester after reset so we know it's in a good state
     tester.start()
 
-    dut._log.info("Test cordic operations")
+    dut._log.info("Test linear multiplication operations")
+
+    X = []
+    Y = []
+    Z = []
 
     # Do cordic solutions
-    for i, (x, y, z) in enumerate(zip(gen(), gen(), gen())):
+    for i, (x, z) in enumerate(zip(gen(mu=0), gen(mu=0))):
         await RisingEdge(dut.clk_i)
         dut.x_i.value = x
-        dut.y_i.value = y
+        dut.y_i.value = FixedPoint(0, m=14, n=16, signed=True).bits
         dut.z_i.value = z
         dut.valid_i.value = 1
 
         await RisingEdge(dut.clk_i)
         dut.valid_i.value = 0
 
-        if i % 100 == 0:
-            dut._log.info(f"{i} / {NUM_SAMPLES}")
+        await RisingEdge(dut.valid_o)
+
+        if ((i+1) % (NUM_SAMPLES/10) == 0):
+            dut._log.info(f"{i+1} / {NUM_SAMPLES}")
+
+        if tester.status == False:
+            X.append(intToFloat(x))
+            Z.append(intToFloat(z))
     await RisingEdge(dut.clk_i)
 
+    dut._log.info(f"Passed: {tester.PASSED} Errors: {tester.ERRORS}")
+    dut._log.info(x)
 
-def create(func):
-    return func(17)
+    # plt.figure()
+    # plt.subplot(211)
+    # plt.plot(X)
+    # plt.subplot(212)
+    # plt.plot(Z)
+    # plt.show()
+
+    assert tester.ERRORS == 0
 
 
-def gen(num_samples=NUM_SAMPLES, func=getrandbits):
+@cocotb.test(
+    expect_error=IndexError if cocotb.SIM_NAME.lower().startswith("ghdl") else ()
+)
+async def test_cos_sin(dut: SimHandleBase):
+    """Test linear multiplication cordic"""
+
+    cocotb.start_soon(Clock(dut.clk_i, 10, units="ns").start())
+    tester = CordicTester(dut)
+
+    dut._log.info("Initialize and reset model")
+
+    # Initial valies
+    dut.valid_i.value = 0
+    dut.valid_i.value = 0
+    dut.mode.value = 0
+    dut.rotational.value = 1
+    dut.x_i.value = 0
+    dut.y_i.value = 0
+    dut.z_i.value = 0
+
+    # Reset DUT
+    dut.rstn_i.value = 0
+    for _ in range(3):
+        await RisingEdge(dut.clk_i)
+    dut.rstn_i.value = 1
+
+    # start tester after reset so we know it's in a good state
+    tester.start()
+
+    dut._log.info("Test rotational cosine and sine operations")
+
+    # Do cordic solutions
+    for i, z in enumerate(gen(mu=1)):
+        await RisingEdge(dut.clk_i)
+        dut.x_i.value = FixedPoint(0.6073, m=14, n=16, signed=True).bits
+        dut.y_i.value = FixedPoint(0, m=14, n=16, signed=True).bits
+        dut.z_i.value = z
+        dut.valid_i.value = 1
+
+        await RisingEdge(dut.clk_i)
+        dut.valid_i.value = 0
+
+        await RisingEdge(dut.valid_o)
+
+        if ((i+1) % (NUM_SAMPLES/10) == 0):
+            dut._log.info(f"{i+1} / {NUM_SAMPLES}")
+    await RisingEdge(dut.clk_i)
+
+    dut._log.info(f"Passed: {tester.PASSED} Errors: {tester.ERRORS}")
+
+    assert tester.ERRORS == 0
+
+
+@cocotb.test(
+    expect_error=IndexError if cocotb.SIM_NAME.lower().startswith("ghdl") else ()
+)
+async def test_cosh_sinh(dut: SimHandleBase):
+    """Test linear multiplication cordic"""
+
+    cocotb.start_soon(Clock(dut.clk_i, 10, units="ns").start())
+    tester = CordicTester(dut)
+
+    dut._log.info("Initialize and reset model")
+
+    # Initial valies
+    dut.valid_i.value = 0
+    dut.valid_i.value = 0
+    dut.mode.value = 2
+    dut.rotational.value = 1
+    dut.x_i.value = 0
+    dut.y_i.value = 0
+    dut.z_i.value = 0
+
+    # Reset DUT
+    dut.rstn_i.value = 0
+    for _ in range(3):
+        await RisingEdge(dut.clk_i)
+    dut.rstn_i.value = 1
+
+    # start tester after reset so we know it's in a good state
+    tester.start()
+
+    dut._log.info("Test hyperbolic cosine and sine operations")
+
+    # Do cordic solutions
+    for i, z in enumerate(gen(mu=-1)):
+        await RisingEdge(dut.clk_i)
+        dut.x_i.value = FixedPoint(1.2075, m=14, n=16, signed=True).bits
+        dut.y_i.value = FixedPoint(0, m=14, n=16, signed=True).bits
+        dut.z_i.value = z
+        dut.valid_i.value = 1
+
+        await RisingEdge(dut.clk_i)
+        dut.valid_i.value = 0
+
+        await RisingEdge(dut.valid_o)
+
+        if ((i+1) % (NUM_SAMPLES/10) == 0):
+            dut._log.info(f"{i+1} / {NUM_SAMPLES}")
+    await RisingEdge(dut.clk_i)
+
+    dut._log.info(f"Passed: {tester.PASSED} Errors: {tester.ERRORS}")
+
+    assert tester.ERRORS == 0
+
+
+def create(func, mu=1, mode=""):
+    ret = func(32)
+    if mu == 1:
+        while intToFloat(ret) < -pi/2 or intToFloat(ret) > pi/2:
+            ret = func(32)
+    elif mu == 0:
+        while intToFloat(ret) < -1 or intToFloat(ret) > 1:
+            ret = func(32)
+    elif mu == -1:
+        while intToFloat(ret) < -5 or intToFloat(ret) > 5:
+            ret = func(32)
+    return ret
+
+
+def gen(num_samples=NUM_SAMPLES, func=getrandbits, mu=1, mode=""):
     """Generate random variable data for variables"""
     for _ in range(num_samples):
-        yield create(func)
+        yield create(func, mu=mu, mode=mode)

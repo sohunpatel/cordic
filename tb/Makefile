@@ -4,7 +4,7 @@ SIM ?= icarus
 PWD=$(shell pwd)
 
 ifeq ($(TOPLEVEL_LANG),verilog)
-    VERILOG_SOURCES = $(PWD)/../hdl/cordic.v
+    VERILOG_SOURCES = $(PWD)/../hdl/top.v
 
     ifneq ($(filter $(SIM),riviera activehdl),)
         COMPILE_ARGS += -sv2k12
@@ -33,7 +33,7 @@ endif
 # Fix the seed to ensure deterministic tests
 export RANDOM_SEED := 123456789
 
-TOPLEVEL    := cordic
+TOPLEVEL    := top
 MODULE      := tb
 
 include $(shell cocotb-config --makefiles)/Makefile.sim
